@@ -2588,6 +2588,7 @@ export const onPrerenderRoute =
       }
 
       prerenders[outputPathPage] = new Prerender({
+        passQuery: true,
         expiration: initialRevalidate,
         lambda,
         allowQuery: htmlAllowQuery,
@@ -2640,6 +2641,7 @@ export const onPrerenderRoute =
         }
 
         const prerender = new Prerender({
+          passQuery: true,
           expiration: initialRevalidate,
           lambda,
           allowQuery,
