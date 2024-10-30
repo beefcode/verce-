@@ -13,6 +13,7 @@ import {
 } from './helpers/setup-e2e-fixture';
 import formatOutput from './helpers/format-output';
 import type { CLIProcess } from './helpers/types';
+import { randomBytes } from 'crypto';
 
 const TEST_TIMEOUT = 3 * 60 * 1000;
 jest.setTimeout(TEST_TIMEOUT);
@@ -521,8 +522,11 @@ test('deploy using --local-config flag above target', async () => {
 });
 
 // eslint-disable-next-line jest/no-disabled-tests
-test.skip('deploy `api-env` fixture and test `vercel env` command', async () => {
+test('deploy `api-env` fixture and test `vercel env` command', async () => {
   const target = await setupE2EFixture('api-env');
+  const promptEnvVar = `VAR_${randomBytes(8).toString('hex')}`;
+  const stdinEnvVar = `VAR_${randomBytes(8).toString('hex')}`;
+  const previewEnvVar = `VAR_${randomBytes(8).toString('hex')}`;
 
   async function vcLink() {
     const { exitCode, stdout, stderr } = await execCli(
@@ -535,40 +539,24 @@ test.skip('deploy `api-env` fixture and test `vercel env` command', async () => 
     expect(exitCode, formatOutput({ stdout, stderr })).toBe(0);
   }
 
-  async function vcEnvLsIsEmpty() {
-    const { exitCode, stdout, stderr } = await execCli(
-      binaryPath,
-      ['env', 'ls'],
-      {
-        cwd: target,
-      }
-    );
-
-    expect(exitCode, formatOutput({ stdout, stderr })).toBe(0);
-    expect(stderr).toMatch(
-      /No Environment Variables found for (.*)\/api-env/gm
-    );
-  }
-
   async function vcEnvAddWithPrompts() {
     const vc = execCli(binaryPath, ['env', 'add'], {
       cwd: target,
     });
 
     await waitForPrompt(vc, "What's the name of the variable?");
-    vc.stdin?.write('MY_NEW_ENV_VAR\n');
+    vc.stdin?.write(`${promptEnvVar}\n`);
     await waitForPrompt(
       vc,
       chunk =>
-        chunk.includes("What's the value of") &&
-        chunk.includes('MY_NEW_ENV_VAR')
+        chunk.includes("What's the value of") && chunk.includes(promptEnvVar)
     );
     vc.stdin?.write('my plaintext value\n');
 
     await waitForPrompt(
       vc,
       chunk =>
-        chunk.includes('which Environments') && chunk.includes('MY_NEW_ENV_VAR')
+        chunk.includes('which Environments') && chunk.includes(promptEnvVar)
     );
     vc.stdin?.write('a\n'); // select all
 
@@ -578,20 +566,16 @@ test.skip('deploy `api-env` fixture and test `vercel env` command', async () => 
   }
 
   async function vcEnvAddFromStdin() {
-    const vc = execCli(
-      binaryPath,
-      ['env', 'add', 'MY_STDIN_VAR', 'development'],
-      {
-        cwd: target,
-      }
-    );
+    const vc = execCli(binaryPath, ['env', 'add', stdinEnvVar, 'development'], {
+      cwd: target,
+    });
     vc.stdin?.end('{"expect":"quotes"}');
     const { exitCode, stdout, stderr } = await vc;
     expect(exitCode, formatOutput({ stdout, stderr })).toBe(0);
   }
 
   async function vcEnvAddFromStdinPreview() {
-    const vc = execCli(binaryPath, ['env', 'add', 'MY_PREVIEW', 'preview'], {
+    const vc = execCli(binaryPath, ['env', 'add', previewEnvVar, 'preview'], {
       cwd: target,
     });
     vc.stdin?.end('preview-no-branch');
@@ -602,7 +586,7 @@ test.skip('deploy `api-env` fixture and test `vercel env` command', async () => 
   async function vcEnvAddFromStdinPreviewWithBranch() {
     const vc = execCli(
       binaryPath,
-      ['env', 'add', 'MY_PREVIEW', 'preview', 'staging'],
+      ['env', 'add', previewEnvVar, 'preview', 'staging'],
       {
         cwd: target,
       }
@@ -627,15 +611,15 @@ test.skip('deploy `api-env` fixture and test `vercel env` command', async () => 
 
     const lines = stdout.split('\n');
 
-    const plaintextEnvs = lines.filter(line => line.includes('MY_NEW_ENV_VAR'));
+    const plaintextEnvs = lines.filter(line => line.includes(promptEnvVar));
     expect(plaintextEnvs.length).toBe(1);
     expect(plaintextEnvs[0]).toMatch(/Production, Preview, Development/gm);
 
-    const stdinEnvs = lines.filter(line => line.includes('MY_STDIN_VAR'));
+    const stdinEnvs = lines.filter(line => line.includes(stdinEnvVar));
     expect(stdinEnvs.length).toBe(1);
     expect(stdinEnvs[0]).toMatch(/Development/gm);
 
-    const previewEnvs = lines.filter(line => line.includes('MY_PREVIEW'));
+    const previewEnvs = lines.filter(line => line.includes(previewEnvVar));
     expect(previewEnvs.length).toBe(1);
     expect(previewEnvs[0]).toMatch(/Encrypted .* Preview /gm);
   }
@@ -701,13 +685,13 @@ test.skip('deploy `api-env` fixture and test `vercel env` command', async () => 
     const apiRes = await fetch(apiUrl);
     expect(apiRes.status, apiUrl).toBe(200);
     const apiJson = await apiRes.json();
-    expect(apiJson['MY_NEW_ENV_VAR']).toBe('my plaintext value');
+    expect(apiJson[promptEnvVar]).toBe('my plaintext value');
 
     const homeUrl = `https://${host}`;
     const homeRes = await fetch(homeUrl);
     expect(homeRes.status, homeUrl).toBe(200);
     const homeJson = await homeRes.json();
-    expect(homeJson['MY_NEW_ENV_VAR']).toBe('my plaintext value');
+    expect(homeJson[promptEnvVar]).toBe('my plaintext value');
   }
 
   async function vcDevWithEnv() {
@@ -723,13 +707,13 @@ test.skip('deploy `api-env` fixture and test `vercel env` command', async () => 
 
     const apiJson = await apiRes.json();
 
-    expect(apiJson['MY_NEW_ENV_VAR']).toBe('my plaintext value');
+    expect(apiJson[promptEnvVar]).toBe('my plaintext value');
 
     const homeUrl = localhost[0];
 
     const homeRes = await fetch(homeUrl);
     const homeJson = await homeRes.json();
-    expect(homeJson['MY_NEW_ENV_VAR']).toBe('my plaintext value');
+    expect(homeJson[promptEnvVar]).toBe('my plaintext value');
 
     // sleep before kill, otherwise the dev process doesn't clean up and exit properly
     await sleep(100);
@@ -750,14 +734,14 @@ test.skip('deploy `api-env` fixture and test `vercel env` command', async () => 
     expect(apiRes.status).toBe(200);
 
     const apiJson = await apiRes.json();
-    expect(apiJson['MY_NEW_ENV_VAR']).toBe('my plaintext value');
-    expect(apiJson['MY_STDIN_VAR']).toBe('{"expect":"quotes"}');
+    expect(apiJson[promptEnvVar]).toBe('my plaintext value');
+    expect(apiJson[stdinEnvVar]).toBe('{"expect":"quotes"}');
 
     const homeUrl = localhost[0];
     const homeRes = await fetch(homeUrl);
     const homeJson = await homeRes.json();
-    expect(homeJson['MY_NEW_ENV_VAR']).toBe('my plaintext value');
-    expect(homeJson['MY_STDIN_VAR']).toBe('{"expect":"quotes"}');
+    expect(homeJson[promptEnvVar]).toBe('my plaintext value');
+    expect(homeJson[stdinEnvVar]).toBe('{"expect":"quotes"}');
 
     // system env vars are hidden in dev
     expect(apiJson['VERCEL']).toBeUndefined();
@@ -862,7 +846,7 @@ test.skip('deploy `api-env` fixture and test `vercel env` command', async () => 
   async function vcEnvRemoveWithArgs() {
     const { exitCode, stdout, stderr } = await execCli(
       binaryPath,
-      ['env', 'rm', 'MY_STDIN_VAR', 'development', '-y'],
+      ['env', 'rm', stdinEnvVar, 'development', '-y'],
       {
         cwd: target,
       }
@@ -874,7 +858,7 @@ test.skip('deploy `api-env` fixture and test `vercel env` command', async () => 
   async function vcEnvRemoveWithNameOnly() {
     const { exitCode, stdout, stderr } = await execCli(
       binaryPath,
-      ['env', 'rm', 'MY_NEW_ENV_VAR', '-y'],
+      ['env', 'rm', promptEnvVar, '-y'],
       {
         cwd: target,
       }
@@ -890,15 +874,14 @@ test.skip('deploy `api-env` fixture and test `vercel env` command', async () => 
   }
 
   async function vcEnvRemoveAll() {
-    await vcEnvRemoveByName('MY_PREVIEW');
-    await vcEnvRemoveByName('MY_STDIN_VAR');
-    await vcEnvRemoveByName('MY_NEW_ENV_VAR');
+    await vcEnvRemoveByName(previewEnvVar);
+    await vcEnvRemoveByName(stdinEnvVar);
+    await vcEnvRemoveByName(promptEnvVar);
   }
 
   try {
     await vcEnvRemoveAll();
     await vcLink();
-    await vcEnvLsIsEmpty();
     await vcEnvAddWithPrompts();
     await vcEnvAddFromStdin();
     await vcEnvAddFromStdinPreview();
@@ -918,7 +901,6 @@ test.skip('deploy `api-env` fixture and test `vercel env` command', async () => 
     await vcEnvRemove();
     await vcEnvRemoveWithArgs();
     await vcEnvRemoveWithNameOnly();
-    await vcEnvLsIsEmpty();
   } finally {
     await vcEnvRemoveAll();
   }
